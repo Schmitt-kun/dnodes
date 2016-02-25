@@ -1,4 +1,5 @@
 //var sessionId;
+var svg;
 var socket;
 var connected = false;
 var tasksId = 0;
@@ -7,16 +8,20 @@ var sent = {};
 var keypressed = {};
 var selectedNode;
 var newlink;
+var mode = "default";
 
 function connect(){
     socket = new WebSocket("ws://" + window.location.host
      + "/websocket");
     socket.onopen = function(){
         connected = true;
+        updateCounter();
+        addTask({"command":"nodes_info"}, function(nodes){repaint(nodes);});
         doSend();
     };
     socket.onclose = function(){
         connected = false;
+        updateCounter();
         sent = {};
         window.setTimeout(function(){connect();}, 1000);
     }
@@ -27,6 +32,7 @@ function connect(){
     };
     socket.onerror = function(){
         connected = false;
+        updateCounter();
         sent = {};
         window.setTimeout(function(){connect();}, 1000);
     };
@@ -52,6 +58,7 @@ function addTask(request, callback){
         task = {"request":request};
     }
     tasks[id] = task;
+    updateCounter();
     if(connected){
         doSend();
     }
@@ -68,6 +75,7 @@ function doSend(){
         }
         if(!err){
             delete tasks[id];
+            updateCounter();
             if(task.callback){
                 sent[id] = task;
             }
@@ -98,7 +106,7 @@ function repaint(json){
         json[a].y=y;
         for(var b = 0; b < a; b++){
             var id = json[b].node_id;
-            if(json[a].links.includes(id)){
+            if(json[a].links.indexOf(id) >= 0){
                 //рисуем линию
                 var x1 = json[a].x + rx/2;
                 var y1 = json[a].y + ry/2;
@@ -184,63 +192,112 @@ function repaint(json){
 }
 
 function mousedownNode(evt){
+    var node = evt.target.parentElement;
+    switch (mode){
+        case "link":
+            doLink(node, true);
+            break;
+        case "unlink":
+            doLink(node, false);
+            break;
+        case "delete":
+            var nodeId = node.getAttribute('nodeid');
+            addTask({"command":"deleteNode", "nodeId": nodeId});
+            break;
+    }
+}
+
+function doLink(node, isCreating){
     if(selectedNode){
         //selectedNode - начало, evt.target.parentElement - конец, отрабатываем
         var node1 = selectedNode.getAttribute('nodeid');
-        var node2 = evt.target.parentElement.getAttribute('nodeid');
-        addTask({"command":"addLink", "nodeId1":node1, "nodeId2":node2});
+        var node2 = node.getAttribute('nodeid');
+        if(isCreating) {
+            addTask({"command":"addLink", "nodeId1":node1, "nodeId2":node2});
+        } else {
+            addTask({"command":"deleteLink", "nodeId1":node1, "nodeId2":node2});
+        }
         svg.removeChild(newlink);
         selectedNode = undefined;
         newlink = undefined;
         $(document).off("mousemove");
     } else {
-        selectedNode = evt.target.parentElement;
+        selectedNode = node;
         var rect = selectedNode.childNodes[0];
         var offset = $(svg).offset();
         var x1 = +rect.getAttribute("x") + rect.getAttribute("width") / 2;
         var y1 = +rect.getAttribute("y") + rect.getAttribute("height") / 2;
+        var color = isCreating ? "rgb(0,255,0)" : "rgb(255,0,0)";
         newlink = document.createElementNS("http://www.w3.org/2000/svg", 'line');
         newlink.setAttribute("x1", x1);
         newlink.setAttribute("y1", y1);
         newlink.setAttribute("x2", x1);
         newlink.setAttribute("y2", y1);
-        newlink.setAttribute("style","stroke:rgb(0,0,0);stroke-width:1;fill:none");
+        newlink.setAttribute("style","stroke:"+color +";stroke-width:3;fill:none");
         svg.appendChild(newlink);
         $(document).mousemove(function(evt){
             var x2 = evt.pageX - offset.left;
             var y2 = evt.pageY - offset.top;
             var dx = (x2 - x1)/Math.abs(x2-x1);
             var dy = (y2 - y1)/Math.abs(y2-y1);
-            newlink.setAttribute("x2", evt.pageX - offset.left - dx);
-            newlink.setAttribute("y2", evt.pageY - offset.top - dy);
+            newlink.setAttribute("x2", evt.pageX - offset.left - (isNaN(dx)?0:dx));
+            newlink.setAttribute("y2", evt.pageY - offset.top - (isNaN(dy)?0:dy));
         });
     }
 }
 
-function newNode(){
-    addTask({"command":"newNode"});
-}
-
-function deleteNode(){
-    var deleteNodeId = $("#deleteNodeId").val();
-    addTask({"command":"deleteNode", "nodeId": deleteNodeId});
-}
-
-function deleteLink(){
-    var node1 = $("#deleteLink1").val();
-    var node2 = $("#deleteLink2").val();
-    addTask({"command":"deleteLink", "nodeId1":node1, "nodeId2":node2});
-}
-
 function start(){
+    svg = document.getElementById("svg");
     $(document).keydown(function(e){
+        switch (e.which){
+            case 68://D
+                mode = "delete";
+                svg.style.cursor = "crosshair";
+                break;
+            case 76://L
+                if(newlink) newlink.setAttribute("style","stroke:rgb(0,255,0);stroke-width:3;fill:none");
+                mode = "link";
+                svg.style.cursor = "help";
+                break;
+            case 85://U
+                if(newlink) newlink.setAttribute("style","stroke:rgb(255,0,0);stroke-width:3;fill:none");
+                mode = "unlink";
+                svg.style.cursor = "no-drop";
+                break;
+        }
         keypressed[e.which] = true;
-        console.log(e.which + " down " + Object.keys(keypressed).length);
     });
     $(document).keyup(function(e){
+        switch (e.which){
+            case 68://D
+            case 76://L
+            case 85://U
+                if(newlink) newlink.setAttribute("style","stroke:rgb(150,150,150);stroke-width:3;fill:none");
+                mode = "default";
+                svg.style.cursor = "default";
+                break;
+        }
         delete keypressed[e.which];
-        console.log(e.which + " up " + Object.keys(keypressed).length);
+    });
+    $(document).keypress(function(e){
+        switch (e.which){
+            case 110:
+                addTask({"command":"newNode"});
+                break;
+        }
     });
     connect();
     addTask({"command":"nodes_info"}, function(nodes){repaint(nodes);});
+}
+
+function updateCounter(){
+    var counter = document.getElementById("taskCounter");
+    var count = Object.keys(tasks).length;
+    counter.innerHTML = count;
+    if(connected){
+        counter.style.color = "green";
+    } else {
+        counter.style.color = "red";
+    }
+
 }

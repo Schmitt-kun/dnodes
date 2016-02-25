@@ -6,15 +6,9 @@
         <meta charset="utf8">
     </head>
     <body>
-        <div><input type="button" onclick="newNode()" value="New node"></div>
-        <div>
-            <input type="button" onclick="deleteNode()" value="Delete node">
-            <input id="deleteNodeId" type="text" size="20">
-        </div>
-        <div>
-            <input type="button" onclick="deleteLink()" value="Delete link">
-            <input id="deleteLink1" type="text" size="20">
-            <input id="deleteLink2" type="text" size="20">
+        <div style="height: 23px">
+            <div><u>N</u>ew <u>L</u>ink <u>D</u>elete <u>U</u>nlink</div>
+            <div id="taskCounter" style="position: absolute;right: 10px;width: 40px">0</div>
         </div>
         <div><svg id="svg" width="800" height="600"></svg></div>
         <script>
